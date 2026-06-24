@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>性质分析</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta property="og:type" content="website">
+<meta property="og:title" content="性质分析">
+<meta property="og:description" content="计算并显示分子的分子量、氢键数、极性表面积等理化性质。">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="性质分析">
+<meta name="twitter:description" content="计算并显示分子的分子量、氢键数、极性表面积等理化性质。">
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"WebApplication",
+  "name":"性质分析",
+  "description":"计算并显示分子的分子量、氢键数、极性表面积等理化性质。",
+  "applicationCategory":"UtilitiesApplication",
+  "operatingSystem":"Any",
+  "offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}
+}
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;}
+#content{max-width:960px;margin:auto;padding:20px;display:flex;flex-direction:column;align-items:center;gap:20px;}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);width:100%;padding:16px;}
+h2{color:#2f6fed;margin-bottom:12px;}
+h3{margin-top:0;margin-bottom:12px;font-size:1.2rem;color:#2f6fed;}
+label{display:block;margin-bottom:6px;font-weight:500;}
+input[type=file]{width:100%;padding:8px;border-radius:4px;border:1px solid #ccc;background:#fff;}
+button{cursor:pointer;font-size:1rem;border:none;border-radius:4px;padding:8px 12px;transition:background 0.2s;}
+button.primary{background:#2f6fed;color:#fff;}
+button.primary:hover{background:#2a5cbf;}
+button.secondary{background:#fff;color:#2f6fed;border:1px solid #2f6fed;}
+button.secondary:hover{background:#e6f0ff;}
+.result{margin-top:12px;line-height:1.8;}
+.result span{display:inline-block;width:120px;font-weight:600;}
+@media(max-width:640px){body{font-size:15px}}
+</style>
+<meta name="description" content="计算并显示分子的分子量、氢键数、极性表面积等理化性质。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="性质分析"><meta property="og:description" content="计算并显示分子的分子量、氢键数、极性表面积等理化性质。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="性质分析"><meta name="twitter:description" content="计算并显示分子的分子量、氢键数、极性表面积等理化性质。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"性质分析","description":"计算并显示分子的分子量、氢键数、极性表面积等理化性质。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div id="content">
+<h2>性质分析</h2>
+
+<div class="card" id="uploadSection">
+<h3>上传分子文件</h3>
+<label for="molFile">支持 PDB / SDF / MOL2（仅解析 PDB 示例）</label>
+<input type="file" id="molFile" accept=".pdb,.sdf,.mol2">
+<button id="loadBtn" class="primary">加载并计算</button>
+</div>
+
+<div class="card" id="resultSection" style="display:none;">
+<h3>计算结果</h3>
+<div class="result"><span>分子量：</span><span id="mw">-</span> g/mol</div>
+<div class="result"><span>氢键数（供体+受体）：</span><span id="hb">-</span></div>
+<div class="result"><span>极性表面积 (PSA)：</span><span id="psa">-</span> Å²</div>
+</div>
+
+<div class="card" id="infoSection">
+<h3>操作</h3>
+<p>若您已在查看器页面中加载了分子，系统将自动读取该分子数据进行计算；否则请上传一个 PDB 文件。</p>
+<button id="toViewer" class="secondary">返回查看器</button>
+<button id="toExport" class="primary" style="margin-left:8px;">导出结果</button>
+</div>
+</div>
+
+<script>
+// 全局数据容器（由其他页面注入）
+window.APP_DATA = window.APP_DATA || {};
+
+const elementsWeight = {
+  H:1.008, He:4.003, Li:6.94, Be:9.012, B:10.81, C:12.011, N:14.007, O:15.999, F:18.998, Ne:20.180,
+  Na:22.990, Mg:24.305, Al:26.982, Si:28.086, P:30.974, S:32.06, Cl:35.45, Ar:39.948,
+  K:39.098, Ca:40.078, Sc:44.956, Ti:47.867, V:50.942, Cr:52.00, Mn:54.938, Fe:55.845,
+  Co:58.933, Ni:58.693, Cu:63.546, Zn:65.38, Ga:69.723, Ge:72.630, As:74.922, Se:78.971,
+  Br:79.904, Kr:83.798, Rb:85.468, Sr:87.62, Y:88.906, Zr:91.224, Nb:92.906, Mo:95.95,
+  Tc:98, Ru:101.07, Rh:102.906, Pd:106.42, Ag:107.868, Cd:112.411, In:114.818, Sn:118.710,
+  Sb:121.760, Te:127.60, I:126.904, Xe:131.293
+};
+
+function parsePDB(text){
+  const lines = text.split('\n');
+  const atoms = [];
+  const serialToIndex = new Map();
+  for(const line of lines){
+    if(line.startsWith('ATOM') || line.startsWith('HETATM')){
+      const serial = line.substring(6,11).trim();
+      const atomName = line.substring(12,16).trim();
+      let element = '';
+      if(line.length >= 78){
+        element = line.substring(76,78).trim();
+      }
+      if(!element){
+        element = atomName.replace(/[\d]/g,'').toUpperCase();
+      }
+      const x = parseFloat(line.substring(30,38));
+      const y = parseFloat(line.substring(38,46));
+      const z = parseFloat(line.substring(46,54));
+      const idx = atoms.length;
+      atoms.push({serial:serial||String(idx+1), element, pos:[x,y,z]});
+      if(serial) serialToIndex.set(serial, idx);
+    }
+  }
+  const bonds = [];
+  for(const line of lines){
+    if(line.startsWith('CONNECT')){
+      const parts = line.trim().split(/\s+/);
+      const baseSerial = parts[1];
+      const baseIdx = serialToIndex.get(baseSerial);
+      if(baseIdx===undefined) continue;
+      for(let i=2;i<parts.length;i++){
+        const targetIdx = serialToIndex.get(parts[i]);
+        if(targetIdx!==undefined) bonds.push([baseIdx,targetIdx]);
+      }
+    }
+  }
+  return {atoms,bonds};
+}
+
+function computeProps({atoms,bonds}){
+  const adj = Array.from({length:atoms.length},()=>[]);
+  for(const [a,b] of bonds){
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  let mw=0, donor=0, acceptor=0, nCount=0, oCount=0;
+  atoms.forEach((at,i)=>{
+    const w = elementsWeight[at.element]||0;
+    mw+=w;
+    if(at.element==='N' || at.element==='O'){
+      acceptor++;
+      if(at.element==='N') nCount++; else oCount++;
+      const hasH = adj[i].some(j=>atoms[j].element==='H');
+      if(hasH) donor++;
+    }
+  });
+  const hbond = donor+acceptor;
+  const PSA = (nCount+oCount)*12.0;
+  return {mw,hbond,PSA};
+}
+
+function displayResult({mw,hbond,PSA}){
+  document.getElementById('mw').textContent=mw.toFixed(2);
+  document.getElementById('hb').textContent=hbond;
+  document.getElementById('psa').textContent=PSA.toFixed(1);
+  document.getElementById('resultSection').style.display='block';
+}
+
+document.getElementById('loadBtn').addEventListener('click',()=>{
+  const file = document.getElementById('molFile').files[0];
+  if(!file){ alert('请选择文件'); return; }
+  const reader = new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=parsePDB(e.target.result);
+      if(data.atoms.length===0) throw new Error('未解析到任何原子');
+      const props=computeProps(data);
+      displayResult(props);
+    }catch(err){
+      alert('解析失败：'+err.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
+window.addEventListener('load',()=>{
+  const mol=window.APP_DATA.currentMolecule;
+  if(mol && mol.atoms && mol.bonds){
+    try{
+      const props=computeProps(mol);
+      displayResult(props);
+      document.getElementById('uploadSection').style.display='none';
+    }catch(e){ console.error(e); }
+  }
+});
+
+document.getElementById('toViewer').addEventListener('click',()=>{
+  window.location.href='viewer.html';
+});
+
+document.getElementById('toExport').addEventListener('click',()=>{
+  const id = encodeURIComponent(window.APP_DATA.currentMolecule?.id||'');
+  window.location.href='export.html' + (id?'?id='+id:'');
+});
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
