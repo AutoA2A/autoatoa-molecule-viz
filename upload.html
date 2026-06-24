@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分子上传</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;padding-top:60px}
+#content{max-width:960px;margin:auto;padding:20px}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);padding:16px}
+h2{margin-top:0;margin-bottom:16px;font-size:1.8rem;color:#2f6fed}
+.file-box{border:2px dashed #ccc;border-radius:6px;padding:30px;text-align:center;background:#fafafa;transition:background .2s}
+.file-box.dragover{border-color:#2f6fed;background:#e6f0ff}
+.file-box input{display:none}
+.btn{display:inline-block;padding:10px 20px;background:#2f6fed;color:#fff;border:none;border-radius:4px;font-size:1rem;cursor:pointer;transition:background .2s}
+.btn:hover{background:#2a5cbf}
+.btn:disabled{background:#999;cursor:not-allowed}
+#status{margin-top:16px;font-size:1rem;min-height:1.2rem;color:#555;white-space:pre-wrap}
+</style>
+<meta name="description" content="上传 PDB、SDF、MOL2 等格式文件，解析后跳转到查看器显示。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="分子上传"><meta property="og:description" content="上传 PDB、SDF、MOL2 等格式文件，解析后跳转到查看器显示。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="分子上传"><meta name="twitter:description" content="上传 PDB、SDF、MOL2 等格式文件，解析后跳转到查看器显示。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"分子上传","description":"上传 PDB、SDF、MOL2 等格式文件，解析后跳转到查看器显示。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div id="content">
+<div class="card">
+<h2>分子上传</h2>
+<p style="text-align:center;margin-bottom:16px;"><a href="index.html" class="btn">返回首页</a></p>
+<div class="file-box" id="dropArea">
+<p>将 PDB / SDF / MOL2 文件拖放到这里，或点击选择</p>
+<input type="file" id="fileInput" accept=".pdb,.sdf,.mol2">
+</div>
+<button id="uploadBtn" class="btn" disabled>解析并查看</button>
+<div id="status"></div>
+</div>
+</div>
+
+<script>
+// ---------- Parsers ----------
+function parsePDB(text){
+    const atoms=[], bonds=[];
+    const lines=text.split(/\r?\n/);
+    for(const line of lines){
+        if(line.startsWith('ATOM')||line.startsWith('HETATM')){
+            const x=parseFloat(line.substring(30,38).trim());
+            const y=parseFloat(line.substring(38,46).trim());
+            const z=parseFloat(line.substring(46,54).trim());
+            let elem=line.substring(76,78).trim();
+            if(!elem){
+                const name=line.substring(12,16).trim();
+                elem=name.replace(/[0-9]/g,'');
+            }
+            atoms.push({element:elem||'C',x,y,z});
+        }
+    }
+    // Approximate bonds by distance
+    for(let i=0;i<atoms.length;i++){
+        for(let j=i+1;j<atoms.length;j++){
+            const dx=atoms[i].x-atoms[j].x, dy=atoms[i].y-atoms[j].y, dz=atoms[i].z-atoms[j].z;
+            const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+            if(d<2.0) bonds.push({i,j,order:1});
+        }
+    }
+    return {atoms,bonds};
+}
+function parseSDF(text){
+    const lines=text.split(/\r?\n/);
+    if(lines.length<4) return {atoms:[],bonds:[]};
+    const countsLine=lines[3];
+    const atomCount=parseInt(countsLine.substring(0,3),10)||0;
+    const bondCount=parseInt(countsLine.substring(3,6),10)||0;
+    let pos=4;
+    const atoms=[];
+    for(let i=0;i<atomCount;i++){
+        const parts=lines[pos++].trim().split(/\s+/);
+        const x=parseFloat(parts[0]), y=parseFloat(parts[1]), z=parseFloat(parts[2]);
+        let elem=parts[3];
+        if(!elem||elem.length>2) elem=elem.replace(/[0-9]/g,'');
+        atoms.push({element:elem||'C',x,y,z});
+    }
+    const bonds=[];
+    for(let i=0;i<bondCount;i++){
+        const parts=lines[pos++].trim().split(/\s+/);
+        const a1=parseInt(parts[0],10)-1;
+        const a2=parseInt(parts[1],10)-1;
+        let order=parseInt(parts[2],10)||1;
+        if(order>3) order=1;
+        bonds.push({i:a1,j:a2,order});
+    }
+    return {atoms,bonds};
+}
+function parseMOL2(text){
+    const lines=text.split(/\r?\n/);
+    let inAtoms=false, inBonds=false;
+    const atoms=[], bonds=[];
+    for(const line of lines){
+        if(line.startsWith('@<TRIPOS>ATOM')){
+            inAtoms=true; inBonds=false; continue;
+        }
+        if(line.startsWith('@<TRIPOS>BOND')){
+            inAtoms=false; inBonds=true; continue;
+        }
+        if(line.startsWith('@<TRIPOS>')){
+            inAtoms=false; inBonds=false; continue;
+        }
+        if(inAtoms){
+            const parts=line.trim().split(/\s+/);
+            if(parts.length<6) continue;
+            const x=parseFloat(parts[2]), y=parseFloat(parts[3]), z=parseFloat(parts[4]);
+            const type=parts[5];
+            let elem=type.replace(/[0-9]/g,'').split('.')[0];
+            if(!elem||elem.length>2) elem='C';
+            atoms.push({element:elem,x,y,z});
+        }
+        if(inBonds){
+            const parts=line.trim().split(/\s+/);
+            if(parts.length<4) continue;
+            const a1=parseInt(parts[1],10)-1;
+            const a2=parseInt(parts[2],10)-1;
+            let order=parseInt(parts[3],10)||1;
+            if(order>3) order=1;
+            bonds.push({i:a1,j:a2,order});
+        }
+    }
+    // Approximate bonds if none
+    if(bonds.length===0 && atoms.length>1){
+        for(let i=0;i<atoms.length;i++){
+            for(let j=i+1;j<atoms.length;j++){
+                const dx=atoms[i].x-atoms[j].x, dy=atoms[i].y-atoms[j].y, dz=atoms[i].z-atoms[j].z;
+                const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+                if(d<2.0) bonds.push({i,j,order:1});
+            }
+        }
+    }
+    return {atoms,bonds};
+}
+
+// ---------- UI ----------
+const dropArea=document.getElementById('dropArea');
+const fileInput=document.getElementById('fileInput');
+const uploadBtn=document.getElementById('uploadBtn');
+const statusEl=document.getElementById('status');
+let currentFile=null;
+let parsedData=null;
+
+function reset(){
+    uploadBtn.disabled=true;
+    parsedData=null;
+    currentFile=null;
+    statusEl.textContent='';
+}
+function handleFile(file){
+    reset();
+    currentFile=file;
+    statusEl.textContent='读取文件…';
+    const reader=new FileReader();
+    reader.onload=e=>{
+        const text=e.target.result;
+        const name=file.name.toLowerCase();
+        let result;
+        if(name.endsWith('.pdb')) result=parsePDB(text);
+        else if(name.endsWith('.sdf')) result=parseSDF(text);
+        else if(name.endsWith('.mol2')) result=parseMOL2(text);
+        else{
+            statusEl.textContent='不支持的文件格式';
+            return;
+        }
+        if(result.atoms.length===0){
+            statusEl.textContent='未解析到任何原子';
+            return;
+        }
+        parsedData=result;
+        statusEl.innerHTML=`解析成功：${result.atoms.length} 原子，${result.bonds.length} 键。<br>点击 “解析并查看” 继续。`;
+        uploadBtn.disabled=false;
+    };
+    reader.onerror=()=>{statusEl.textContent='文件读取错误';};
+    reader.readAsText(file);
+}
+
+// Drag & drop
+dropArea.addEventListener('dragover',e=>{
+    e.preventDefault();
+    dropArea.classList.add('dragover');
+});
+dropArea.addEventListener('dragleave',e=>{
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+});
+dropArea.addEventListener('drop',e=>{
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+    if(e.dataTransfer.files.length){
+        handleFile(e.dataTransfer.files[0]);
+    }
+});
+dropArea.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',()=>{if(fileInput.files.length) handleFile(fileInput.files[0]);});
+
+// Upload button
+uploadBtn.addEventListener('click',()=>{
+    if(!parsedData) return;
+    const json=JSON.stringify(parsedData);
+    const encoded=encodeURIComponent(json);
+    const url=`viewer.html?data=${encoded}`;
+    statusEl.innerHTML=`正在跳转… <a href="${url}" target="_blank" style="color:#2f6fed;">点击这里如果未自动跳转</a>`;
+    // Delay to allow user to see message, then navigate
+    setTimeout(()=>{window.location.href=url;},500);
+});
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
