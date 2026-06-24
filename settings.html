@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>渲染设置</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;padding-top:60px}
+.container{max-width:960px;margin:auto;padding:20px}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 4px 4px rgba(0,0,0,0.1);padding:16px;margin-bottom:20px}
+h3{margin-top:0;margin-bottom:12px;font-size:1.2rem;color:#2f6fed}
+label{display:block;margin-bottom:8px;font-size:0.95rem}
+input[type=color]{width:48px;height:32px;border:none;cursor:pointer}
+input[type=range]{width:100%}
+button.primary{background:#2f6fed;color:#fff;border:none;border-radius:4px;padding:8px 12px;font-size:1rem;cursor:pointer}
+button.primary:hover{background:#2a5cbf}
+#previewCanvas{width:100%;height:260px;background:#eee;border-radius:4px;display:block;margin-top:12px}
+</style><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="渲染设置"><meta property="og:description" content="调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="渲染设置"><meta name="twitter:description" content="调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"渲染设置","description":"调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style><meta name="description" content="调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="渲染设置"><meta property="og:description" content="调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="渲染设置"><meta name="twitter:description" content="调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"渲染设置","description":"调整背景颜色、光源、原子半径、键粗细、配色方案等渲染参数。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script></head>
+<body>
+<div class="container">
+    <!-- 跳转到 viewer.html 的链接 -->
+    <a href="viewer.html" class="primary" style="display:inline-block;margin-bottom:20px;">查看模型</a>
+
+<div class="card">
+<h3>背景颜色</h3>
+<input type="color" id="bgColor" value="#ffffff">
+</div>
+
+<div class="card">
+<h3>光源颜色</h3>
+<input type="color" id="lightColor" value="#ffffff">
+</div>
+
+<div class="card">
+<h3>光源方向（仰角）</h3>
+<input type="range" id="lightElev" min="-90" max="90" value="45">
+<span id="lightElevVal">45°</span>
+</div>
+
+<div class="card">
+<h3>原子半径缩放</h3>
+<input type="range" id="atomRadius" min="0.5" max="3" step="0.1" value="1">
+<span id="atomRadiusVal">1.0</span>
+</div>
+
+<div class="card">
+<h3>键粗细缩放</h3>
+<input type="range" id="bondWidth" min="0.5" max="5" step="0.1" value="1">
+<span id="bondWidthVal">1.0</span>
+</div>
+
+<div class="card">
+<h3>配色方案</h3>
+<select id="colorScheme">
+<option value="cpk">CPK 颜色</option>
+<option value="uniform">统一颜色</option>
+</select>
+</div>
+
+<div class="card">
+<h3>预览</h3>
+<canvas id="previewCanvas" width="300" height="200"></canvas>
+</div>
+
+<button class="primary" id="applyBtn">应用设置并保存</button>
+</div>
+
+<script>
+// 默认设置
+const DEFAULT_SETTINGS = {
+bgColor: "#ffffff",
+lightColor: "#ffffff",
+lightElev: 45,   // degrees
+atomRadius: 1.0,
+bondWidth: 1.0,
+colorScheme: "cpk"
+};
+
+// 从 localStorage 读取或使用默认
+let settings = JSON.parse(localStorage.getItem('molSettings')) || {...DEFAULT_SETTINGS};
+
+// 元素颜色（CPK）
+const elementColors = {
+H: "#ffffff",
+C: "#000000",
+O: "#ff0000",
+N: "#0000ff",
+S: "#ffff00",
+P: "#ff8800",
+Cl: "#00ff00"
+};
+
+// 简单分子：乙醇 C2H6O（二维坐标，已归一化到 -1~1）
+const atoms = [
+{element:"C", x:-0.6, y: 0.0},
+{element:"C", x: 0.2, y: 0.0},
+{element:"O", x: 0.9, y: 0.0},
+{element:"H", x:-0.9, y:-0.4},
+{element:"H", x:-0.9, y: 0.4},
+{element:"H", x:-0.3, y:-0.4},
+{element:"H", x:-0.3, y: 0.4},
+{element:"H", x: 0.5, y:-0.4},
+{element:"H", x: 0.5, y: 0.4},
+{element:"H", x: 1.2, y:-0.3},
+{element:"H", x: 1.2, y: 0.3}
+];
+const bonds = [
+[0,1],[1,2], // C-C-O backbone
+[0,3],[0,4], // H on first C
+[0,5],[0,6],
+[1,7],[1,8], // H on second C
+[1,9],[1,10],
+[2,11],[2,12] // H on O (actually OH, but we add two H for simplicity)
+];
+
+// DOM 元素
+const bgColorInput = document.getElementById('bgColor');
+const lightColorInput = document.getElementById('lightColor');
+const lightElevInput = document.getElementById('lightElev');
+const lightElevVal = document.getElementById('lightElevVal');
+const atomRadiusInput = document.getElementById('atomRadius');
+const atomRadiusVal = document.getElementById('atomRadiusVal');
+const bondWidthInput = document.getElementById('bondWidth');
+const bondWidthVal = document.getElementById('bondWidthVal');
+const schemeSelect = document.getElementById('colorScheme');
+const previewCanvas = document.getElementById('previewCanvas');
+const ctx = previewCanvas.getContext('2d');
+const applyBtn = document.getElementById('applyBtn');
+
+// 从设置更新 UI
+function updateUIFromSettings(){
+bgColorInput.value = settings.bgColor;
+lightColorInput.value = settings.lightColor;
+lightElevInput.value = settings.lightElev;
+lightElevVal.textContent = settings.lightElev + "°";
+atomRadiusInput.value = settings.atomRadius;
+atomRadiusVal.textContent = settings.atomRadius;
+bondWidthInput.value = settings.bondWidth;
+bondWidthVal.textContent = settings.bondWidth;
+schemeSelect.value = settings.colorScheme;
+}
+
+// 保存设置到 localStorage
+function saveSettings(){
+localStorage.setItem('molSettings', JSON.stringify(settings));
+}
+
+// 应用并保存
+applyBtn.onclick = ()=>{
+settings = {
+bgColor: bgColorInput.value,
+lightColor: lightColorInput.value,
+lightElev: parseFloat(lightElevInput.value),
+atomRadius: parseFloat(atomRadiusInput.value),
+bondWidth: parseFloat(bondWidthInput.value),
+colorScheme: schemeSelect.value
+};
+saveSettings();
+drawPreview();
+};
+
+// UI 事件
+bgColorInput.oninput = ()=>{ settings.bgColor = bgColorInput.value; };
+lightColorInput.oninput = ()=>{ settings.lightColor = lightColorInput.value; };
+lightElevInput.oninput = ()=>{
+settings.lightElev = parseFloat(lightElevInput.value);
+lightElevVal.textContent = settings.lightElev + "°";
+};
+atomRadiusInput.oninput = ()=>{
+settings.atomRadius = parseFloat(atomRadiusInput.value);
+atomRadiusVal.textContent = settings.atomRadius;
+};
+bondWidthInput.oninput = ()=>{
+settings.bondWidth = parseFloat(bondWidthInput.value);
+bondWidthVal.textContent = settings.bondWidth;
+};
+schemeSelect.onchange = ()=>{ settings.colorScheme = schemeSelect.value; };
+
+// 颜色工具：把 #rrggbb 转为 [0,1] 数组
+function parseColor(c){
+c = c.replace('#','');
+const r = parseInt(c.substring(0,2),16)/255;
+const g = parseInt(c.substring(2,4),16)/255;
+const b = parseInt(c.substring(4,6),16)/255;
+return [r,g,b];
+}
+// 颜色乘法（分量相乘）
+function multiplyColor(c1,c2){
+return [c1[0]*c2[0], c1[1]*c2[1], c1[2]*c2[2]];
+}
+// 将 [0,1] 颜色转回 CSS
+function toCSSColor(c){
+const r = Math.round(c[0]*255).toString(16).padStart(2,'0');
+const g = Math.round(c[1]*255).toString(16).padStart(2,'0');
+const b = Math.round(c[2]*255).toString(16).padStart(2,'0');
+return `#${r}${g}${b}`;
+}
+
+// 获取原子基础颜色
+function getAtomColor(atom){
+if(settings.colorScheme === 'uniform'){
+return parseColor(settings.lightColor);
+}
+const base = elementColors[atom.element] || '#ffffff';
+return parseColor(base);
+}
+
+// 绘制预览
+function drawPreview(){
+const w = previewCanvas.width;
+const h = previewCanvas.height;
+ctx.clearRect(0,0,w,h);
+// 背景
+ctx.fillStyle = settings.bgColor;
+ctx.fillRect(0,0,w,h);
+// 光源方向（仅用于简单亮度调整）
+const rad = (settings.lightElev * Math.PI)/180;
+const lightDirX = Math.cos(rad);
+const lightDirY = Math.sin(rad);
+// 简单朗伯光：假设法线朝上 (0,1)，亮度 = max(0, dot)
+const lightFactor = Math.max(0, lightDirY); // 仅使用Y分量
+// 颜色调整：将基础颜色与光源颜色混合，亮度影响
+const lightColorRGB = parseColor(settings.lightColor);
+// 绘制键
+ctx.strokeStyle = toCSSColor(multiplyColor([0.2,0.2,0.2], lightColorRGB)); // 深灰色调
+ctx.lineWidth = 2 * settings.bondWidth;
+ctx.lineCap = 'round';
+for(const [i,j] of bonds){
+const a1 = atoms[i];
+const a2 = atoms[j];
+const x1 = (a1.x + 1) * 0.5 * w;
+const y1 = (1 - (a1.y + 1) * 0.5) * h; // 注意 y 轴翻转
+const x2 = (a2.x + 1) * 0.5 * w;
+const y2 = (1 - (a2.y + 1) * 0.5) * h;
+ctx.beginPath();
+ctx.moveTo(x1,y1);
+ctx.lineTo(x2,y2);
+ctx.stroke();
+}
+// 绘制原子
+for(const atom of atoms){
+const baseColor = getAtomColor(atom);
+// 亮度调整：乘以 (0.3 + 0.7*lightFactor) 使光源方向影响亮度
+const intensity = 0.3 + 0.7 * lightFactor;
+const finalColor = multiplyColor(baseColor, [intensity, intensity, intensity]);
+ctx.fillStyle = toCSSColor(finalColor);
+const radius = 8 * settings.atomRadius; // 基础半径像素
+const cx = (atom.x + 1) * 0.5 * w;
+const cy = (1 - (atom.y + 1) * 0.5) * h;
+ctx.beginPath();
+ctx.arc(cx, cy, radius, 0, Math.PI*2);
+ctx.fill();
+}
+}
+
+// 初始化
+updateUIFromSettings();
+drawPreview();
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://www.autoa2a.org/logo.png" alt="AutoA2A"></a></footer>
+</body>
+</html>
