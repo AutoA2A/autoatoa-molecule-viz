@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>导出与分享</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;padding-top:60px;margin:0}
+#content{max-width:1200px;margin:auto;padding:20px;display:flex;gap:20px}
+#viewport{flex:3;position:relative;background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);overflow:hidden}
+#molCanvas{width:100%;height:100%;display:block}
+#controls{flex:1;display:flex;flex-direction:column;gap:16px;align-items:stretch}
+button,input,select{padding:8px;border-radius:4px;border:1px solid #ccc;background:#fff;color:#333;font-size:1rem}
+button.primary{background:#2f6fed;color:#fff;border:none}
+button.primary:hover{background:#2a5cbf}
+input[type=file]{padding:4px}
+#info{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);padding:12px;flex-shrink:0}
+h3{margin:0 0 8px;font-size:1.2rem;}
+label{display:block;margin-bottom:4px;font-weight:500}
+</style>
+<meta name="description" content="导出当前视图为 PNG/JPEG 或生成可分享的 URL，支持下载分子文件。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="导出与分享"><meta property="og:description" content="导出当前视图为 PNG/JPEG 或生成可分享的 URL，支持下载分子文件。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="导出与分享"><meta name="twitter:description" content="导出当前视图为 PNG/JPEG 或生成可分享的 URL，支持下载分子文件。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"导出与分享","description":"导出当前视图为 PNG/JPEG 或生成可分享的 URL，支持下载分子文件。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div id="content">
+<div id="viewport">
+<canvas id="molCanvas"></canvas>
+</div>
+<div id="controls">
+<div>
+<h3>分子加载</h3>
+<input type="file" id="fileInput" accept=".pdb,.sdf,.mol2">
+<button id="loadFileBtn" class="primary">加载文件</button>
+</div>
+<div>
+<h3>内置分子</h3>
+<select id="molSelect"></select>
+<button id="loadMolBtn" class="primary">加载选中</button>
+</div>
+<div>
+<h3>导出与分享</h3>
+<button id="exportPngBtn" class="primary">导出 PNG</button>
+<button id="exportJpegBtn" class="primary">导出 JPEG</button>
+<button id="shareUrlBtn" class="primary">生成分享链接</button>
+<button id="downloadMolBtn" class="primary">下载分子文件</button>
+<div id="urlOutput" style="margin-top:8px;word-break:break-all;font-size:0.9rem;color:#555;"></div>
+</div>
+<div id="info">
+<h3>信息</h3>
+<p id="infoText">请加载一个分子以查看详情。</p>
+</div>
+</div>
+</div>
+<script>
+// ==== CPK colors and van der Waals radii (Å) ====
+const cpk = {
+H:{color:'#ffffff',radius:1.20},
+C:{color:'#909090',radius:1.70},
+N:{color:'#3050f8',radius:1.55},
+O:{color:'#ff0d0d',radius:1.52},
+F:{color:'#90e050',radius:1.47},
+P:{color:'#ff8000',radius:1.80},
+S:{color:'#ffff30',radius:1.80},
+Cl:{color:'#1ff01f',radius:1.75},
+Br:{color:'#a62929',radius:1.85},
+I:{color:'#940094',radius:1.98},
+};
+const defaultAtom = {color:'#7f7f7f',radius:1.50};
+
+// ==== State ====
+let atoms = []; // each: {x,y,z,elem,color,radius}
+let rotX = 0, rotY = 0; // radians
+let scale = 100; // pixels per Å
+let offsetX = 0, offsetY = 0;
+let isDragging = false, isRightDragging = false;
+let lastX = 0, lastY = 0;
+
+// ==== Utilities ====
+function parsePDB(text){
+const lines = text.split('\n');
+const result = [];
+let serial = 1;
+for(const line of lines){
+if(line.startsWith('ATOM  ') || line.startsWith('HETATM')){
+try{
+const x = parseFloat(line.substring(30,38));
+const y = parseFloat(line.substring(38,46));
+const z = parseFloat(line.substring(46,54));
+let elem = line.substring(76,78).trim();
+if(!elem){
+// try from atom name (columns 13-16)
+const name = line.substring(12,16).trim();
+// take first character that is a letter
+const m = name.match(/[A-Za-z]/);
+elem = m ? m[0].toUpperCase() : 'C';
+}
+const info = cpk[elem] || defaultAtom;
+result.push({x,y,z,elem,color:info.color,radius:info.radius,serial:serial++});
+}catch(e){}
+}
+}
+return result;
+}
+function builtinMolecules(){
+return {
+water:`ATOM      1  O   HOH A   1       0.000   0.000   0.000  1.00 20.00           O\nATOM      2  H   HOH A   1       0.757   0.586   0.000  1.00 20.00           H\nATOM      3  H   HOH A   1      -0.757   0.586   0.000  1.00 20.00           H`,
+ethanol:`ATOM      1  C   ETH A   1       0.000   0.000   0.000  1.00 20.00           C\nATOM      2  C   ETH A   1       1.526   0.000   0.000  1.00 20.00           C\nATOM      3  O   ETH A   1       2.531   1.023   0.000  1.00 20.00           O\nATOM      4  H   ETH A   1      -0.523   0.926   0.000  1.00 20.00           H\nATOM      5  H   ETH A   1      -0.523  -0.463   0.881  1.00 20.00           H\nATOM      6  H   ETH A   1      -0.523  -0.463  -0.881  1.00 20.00           H\nATOM      7  H   ETH A   1       2.049  -0.926   0.000  1.00 20.00           H\nATOM      8  H   ETH A   1       3.438   0.523   0.000  1.00 20.00           H\nATOM      9  H   ETH A   1       2.049   1.523   0.881  1.00 20.00           H\nATOM     10  H   ETH A   1       2.049   1.523  -0.881  1.00 20.00           H`,
+benzene:`ATOM      1  C   BEN A   1       1.397   0.000   0.000  1.00 20.00           C\nATOM      2  C   BEN A   1       0.698   1.210   0.000  1.00 20.00           C\nATOM      3  C   BEN A   1      -0.698   1.210   0.000  1.00 20.00           C\nATOM      4  C   BEN A   1      -1.397   0.000   0.000  1.00 20.00           C\nATOM      5  C   BEN A   1      -0.698  -1.210   0.000  1.00 20.00           C\nATOM      6  C   BEN A   1       0.698  -1.210   0.000  1.00 20.00           C\nATOM      7  H   BEN A   1       2.478   0.000   0.000  1.00 20.00           H\nATOM      8  H   BEN A   1       1.242   2.155   0.000  1.00 20.00           H\nATOM      9  H   BEN A   1      -1.242   2.155   0.000  1.00 20.00           H\nATOM     10  H   BEN A   1      -2.478   0.000   0.000  1.00 20.00           H\nATOM     11  H   BEN A   1      -1.242  -2.155   0.000  1.00 20.00           H\nATOM     12  H   BEN A   1       1.242  -2.155   0.000  1.00 20.00           H`
+};
+}
+function fitToCanvas(){
+if(atoms.length===0){return;}
+const xs = atoms.map(a=>a.x);
+const ys = atoms.map(a=>a.y);
+const zs = atoms.map(a=>a.z);
+const minX = Math.min(...xs), maxX = Math.max(...xs);
+const minY = Math.min(...ys), maxY = Math.max(...ys);
+const rangeX = maxX-minX, rangeY = maxY-minY;
+const canvas = document.getElementById('molCanvas');
+const w = canvas.width, h = canvas.height;
+const padding = 30;
+let s = Math.min((w-2*padding)/rangeX||1, (h-2*padding)/rangeY||1);
+scale = s*0.8;
+offsetX = w/2 - (minX+maxX)/2*scale;
+offsetY = h/2 - (minY+maxY)/2*scale;
+rotX = rotY = 0;
+}
+function rotateX(p, angle){
+const cos = Math.cos(angle), sin = Math.sin(angle);
+return {x:p.x, y:p.y*cos - p.z*sin, z:p.y*sin + p.z*cos};
+}
+function rotateY(p, angle){
+const cos = Math.cos(angle), sin = Math.sin(angle);
+return {x:p.x*cos + p.z*sin, y:p.y, z:-p.x*sin + p.z*cos};
+}
+function project(atom){
+let p = {x:atom.x, y:atom.y, z:atom.z};
+p = rotateX(p, rotX);
+p = rotateY(p, rotY);
+const sx = p.x*scale + offsetX;
+const sy = -p.y*scale + offsetY; // invert Y for canvas
+const r = atom.radius*scale;
+return {x:sx, y:sy, r:r, color:atom.color};
+}
+function draw(){
+const canvas = document.getElementById('molCanvas');
+const ctx = canvas.getContext('2d');
+ctx.clearRect(0,0,canvas.width,canvas.height);
+for(const a of atoms){
+const {x,y,r,color} = project(a);
+ctx.beginPath();
+ctx.arc(x,y,r,0,Math.PI*2);
+ctx.fillStyle = color;
+ctx.fill();
+ctx.strokeStyle = '#555';
+ctx.lineWidth = 0.5;
+ctx.stroke();
+}
+}
+function animate(){
+draw();
+requestAnimationFrame(animate);
+}
+// ==== Interaction ====
+const canvas = document.getElementById('molCanvas');
+canvas.addEventListener('mousedown', e=>{
+if(e.button===0){ // left
+isDragging = true;
+}else if(e.button===2){ // right
+isRightDragging = true;
+}
+lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('mousemove', e=>{
+if(!isDragging && !isRightDragging) return;
+const dx = e.clientX - lastX;
+const dy = e.clientY - lastY;
+if(isDragging){
+rotY += dx * 0.005;
+rotX += dy * 0.005;
+}else if(isRightDragging){
+offsetX += dx;
+offsetY += dy;
+}
+lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('mouseup', e=>{
+if(e.button===0) isDragging = false;
+if(e.button===2) isRightDragging = false;
+});
+canvas.addEventListener('wheel', e=>{
+e.preventDefault();
+const delta = e.deltaY < 0 ? 1.1 : 0.9;
+scale *= delta;
+});
+// ==== Export ====
+document.getElementById('exportPngBtn').addEventListener('click',()=>{
+const url = canvas.toDataURL('image/png');
+const a = document.createElement('a');
+a.href = url;
+a.download = 'molecule.png';
+a.click();
+});
+document.getElementById('exportJpegBtn').addEventListener('click',()=>{
+const url = canvas.toDataURL('image/jpeg',0.92);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'molecule.jpg';
+a.click();
+});
+document.getElementById('shareUrlBtn').addEventListener('click',()=>{
+const state = {
+atoms: atoms.map(a=>({x:a.x,y:a.y,z:a.z,elem:a.elem})),
+rotX, rotY, scale, offsetX, offsetY
+};
+const json = JSON.stringify(state);
+const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,
+function(match, p1){return String.fromCharCode('0x'+p1);}));
+location.hash = 'mol=' + encoded;
+document.getElementById('urlOutput').textContent = location.href;
+});
+document.getElementById('downloadMolBtn').addEventListener('click',()=>{
+let pdbLines = '';
+let serial = 1;
+for(const a of atoms){
+const name = a.elem.padEnd(4,' ');
+const resName = 'MOL';
+const chainID = 'A';
+const resSeq = 1;
+const x = a = a.x.toFixed(3).padStart(8,' ');
+ const y = a.y.toFixed(3).padStart(8,' ');
+ const z = a.z.toFixed(3).padStart(8,' ');
+ const occupancy = 1.00;
+ const tempFactor = 20.00;
+ const element = a.elem.padRight(2,' ');
+ const charge = '  ';
+ pdbLines += `ATOM  ${serial.toString().padStart(5,' ')} ${name} ${resName} ${chainID}${resSeq.toString().padStart(4,' ')}   ${x}${y}${z}${occupancy.toFixed(2).padStart(6,' ')}${tempFactor.toFixed(2).padStart(6,' ')}          ${element}${charge}\n`;
+ serial++;
+}
+const blob = new Blob([pdbLines],{type='chemical/x-pdb'});
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'molecule.pdb';
+a.click();
+URL.revokeObjectURL(url);
+});
+// ==== Load handlers ====
+document.getElementById('loadFileBtn').addEventListener('click',()=>{
+const file = document.getElementById('fileInput').files[0];
+if(!file){alert('请选择文件');return;}
+const reader = new FileReader();
+reader.onload = e=>{
+const text = e.target.result;
+atoms = parsePDB(text);
+if(atoms.length===0){alert('未解析到任何原子');return;}
+fitToCanvas();
+document.getElementById('infoText').textContent = `已加载 ${atoms.length} 个原子`;
+};
+reader.readAsText(file);
+});
+document.getElementById('loadMolBtn').addEventListener('click',()=>{
+const key = document.getElementById('molSelect').value;
+const mol = builtinMolecules()[key];
+if(!mol){return;}
+atoms = parsePDB(mol);
+if(atoms.length===0){alert('未解析到任何原子');return;}
+fitToCanvas();
+document.getElementById('infoText').textContent = `已加载 ${atoms.length} 个原子（${key}）`;
+});
+// ==== Populate built-in select ====
+const built = builtinMolecules();
+const sel = document.getElementById('molSelect');
+for(const name in built){
+const opt = document.createElement('option');
+opt.value = name;
+opt.textContent = name.charAt(0).toUpperCase()+name.slice(1);
+sel.appendChild(opt);
+}
+// ==== Load from hash if present ====
+(function(){
+const hash = location.hash;
+if(hash){
+try{
+const match = hash.match(/mol=([^&]*)/);
+if(match){
+const encoded = match[1];
+const json = decodeURIComponent(atob(encoded).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+const state = JSON.parse(json);
+atoms = state.atoms.map(a=>({...a, color:cpk[a.elem]?.color||defaultAtom.color, radius:cpk[a.elem]?.radius||defaultAtom.radius, serial:0}));
+rotX = state.rotX||0; rotY = state.rotY||0; scale = state.scale||100; offsetX = state.offsetX||0; offsetY = state.offsetY||0;
+fitToCanvas(); // ensure fit
+document.getElementById('infoText').textContent = `已加载 ${atoms.length} 个原子（来自链接）`;
+}
+}catch(e){console.error(e);}
+}
+})();
+// ==== Start render ====
+animate();
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
