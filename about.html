@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>关于我们</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+    :root {
+        --main-color: #2f6fed;
+        --accent-color: #f5a623;
+        --bg-color: #f9f9f9;
+        --text-color: #333;
+        --card-bg: #fff;
+        --shadow: 0 2px 4px rgba(0,0,0,0.1);
+        --radius: 8px;
+        --btn-radius: 4px;
+    }
+    body {
+        margin:0;
+        font-family:'Helvetica Neue',Arial,sans-serif;
+        background:var(--bg-color);
+        color:var(--text-color);
+    }
+    .page-content {
+        margin-top:60px; /* 留出统一导航高度 */
+        padding:20px;
+        max-width:960px;
+        margin-left:auto;
+        margin-right:auto;
+    }
+    h1 {
+        margin-top:0;
+        margin-bottom:24px;
+        font-size:2rem;
+        color:var(--main-color);
+    }
+    .card {
+        background:var(--card-bg);
+        border-radius:var(--radius);
+        box-shadow:var(--shadow);
+        padding:16px;
+        margin-bottom:24px;
+    }
+    .btn {
+        background:var(--main-color);
+        color:#fff;
+        border:none;
+        padding:8px 12px;
+        border-radius:var(--btn-radius);
+        cursor:pointer;
+        font-size:0.9rem;
+    }
+    .btn:hover {
+        background:#2a5cbf;
+    }
+    .team-grid {
+        display:flex;
+        flex-wrap:wrap;
+        gap:16px;
+    }
+    .member-card {
+        flex:1 1 calc(33.333% - 16px);
+        min-width:200px;
+        background:#f0f8ff;
+        border-radius:6px;
+        padding:12px;
+        box-shadow:0 1px 3px rgba(0,0,0,0.1);
+    }
+    .avatar {
+        width:40px;height:40px;
+        background:var(--main-color);
+        color:#fff;
+        border-radius:50%;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:bold;
+        margin-right:8px;
+    }
+    .member-info {
+        display:flex;
+        align-items:center;
+    }
+    .member-name {
+        font-weight:600;
+        margin:0;
+        font-size:1.1rem;
+    }
+    .member-role {
+        margin:4px 0 0;
+        color:#555;
+       5:root {
+        --main-color: #2f6fed;
+        --accent-color: #f5a623;
+        --bg-color: #f9f9f9;
+        --text-color: #333;
+        --card-bg: #fff;
+        --shadow: 0 2px 4px rgba(0,0,0,0.1);
+        --radius: 8px;
+        --btn-radius: 4px;
+    }
+    body {
+        margin:0;
+        font-family:'Helvetica Neue',Arial,sans-serif;
+        background:var(--bg-color);
+        color:var(--text-color);
+    }
+    .page-content {
+        margin-top:60px; /* 留出统一导航高度 */
+        padding:20px;
+        max-width:960px;
+        margin-left:auto;
+        margin-right:auto;
+    }
+    h1 {
+        margin-top:0;
+        margin-bottom:24px;
+        font-size:2rem;
+        color:var(--main-color);
+    }
+    .card {
+        background:var(--card-bg);
+        border-radius:var(--radius);
+        box-shadow:var(--shadow);
+        padding:16px;
+        margin-bottom:24px;
+    }
+    .btn {
+        background:var(--main-color);
+        color:#fff;
+        border:none;
+        padding:8px 12px;
+        border-radius:var(--btn-radius);
+        cursor:pointer;
+        font-size:0.9rem;
+    }
+    .btn:hover {
+        background:#2a5cbf;
+    }
+    .team-grid {
+        display:flex;
+        flex-wrap:wrap;
+        gap:16px;
+    }
+    .member-card {
+        flex:1 1 calc(33.333% - 16px);
+        min-width:200px;
+        background:#f0f8ff;
+        border-radius:6px;
+        padding:12px;
+        box-shadow:0 1px 3px rgba(0,0,0,0.1);
+    }
+    .avatar {
+        width:40px;height:40px;
+        background:var(--main-color);
+        color:#fff;
+        border-radius:50%;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        font-weight:bold;
+        margin-right:8px;
+    }
+    .member-info {
+        display:flex;
+        align-items:center;
+    }
+    .member-name {
+        font-weight:600;
+        margin:0;
+        font-size:1.1rem;
+    }
+    .member-role {
+        margin:4px 0 0;
+        color:#555;
+    }
+    .bio {
+        margin-top:8px;
+        padding-top:8px;
+        border-top:1px dashed #ccc;
+        display:none;
+        font-size:0.9rem;
+        color:#444;
+    }
+    #licenseText {
+        background:#f8f8f8;
+        padding:12px;
+        border-radius:4px;
+        overflow:auto;
+        max-height:200px;
+        font-family:monospace;
+        white-space:pre-wrap;
+    }
+    .changelog {
+        list-style:none;
+        padding:0;
+    }
+    .changelog li {
+        margin-bottom:16px;
+    }
+    .changelog h3 {
+        margin:0 0 4px;
+        color:var(--main-color);
+        cursor:pointer;
+    }
+    .changelog p {
+        margin:0;
+        color:#555;
+    }
+</style>
+<meta name="description" content="介绍项目团队、开源许可证和更新日志。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="关于我们"><meta property="og:description" content="介绍项目团队、开源许可证和更新日志。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="关于我们"><meta name="twitter:description" content="介绍项目团队、开源许可证和更新日志。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"关于我们","description":"介绍项目团队、开源许可证和更新日志。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div class="page-content">
+    <h1>关于我们</h1>
+
+    <!-- 团队 -->
+    <details class="card">
+        <summary style="font-size:1.2rem;font-weight:600;cursor:pointer;">团队成员</summary>
+        <div class="team-grid">
+            <!-- 成员 1 -->
+            <div class="member-card">
+                <div class="member-info">
+                    <div class="avatar">AL</div>
+                    <div>
+                        <p class="member-name">Alex Liu</p>
+                        <p class="member-role">核心开发者 · WebGL & 渲染引擎</p>
+                    </div>
+                </div>
+                <button class="btn toggle-bio">查看简介</button>
+                <p class="bio">Alex 拥有五年 WebGL 与三维可视化经验，曾在多个科研项目中负责高性能渲染引擎的设计与实现。热爱开源，致力于让复杂的科学数据变得直观易用。</p>
+            </div>
+            <!-- 成员 2 -->
+            <div class="member-card">
+                <div class="member-info">
+                    <div class="avatar">ZW</div>
+                    <div>
+                        <p class="member-name">Zoe Wang</p>
+                        <p class="member-role">UI/UX 设计师 · 交互体验</p>
+                    </div>
+                </div>
+                <button class="btn toggle-bio">查看简介</button>
+                <p class="bio">Zoe 专注于交互式科学工具的用户体验设计，擅长将复杂操作流程简化为直观的界面。她的设计使得分子工具在移动端和桌面端都能保持一致的使用感受。</p>
+            </div>
+            <!-- 成员 3 -->
+            <div class="member-card">
+                <div class="member-info">
+                    <div class="avatar">MH</div>
+                    <div>
+                        <p class="member-name">Ming Huang</p>
+                        <p class="member-role">算法工程师 · 分子计算</p>
+                    </div>
+                </div>
+                <button class="btn toggle-bio">查看简介</button>
+                <p class="bio">Ming 在计算化学领域有深厚背景，负责分子性质计算模块的实现，包括分子量、氢键数、极性表面积等。他致力于将严谨的科学算法带入浏览器端。</p>
+            </div>
+        </div>
+    </details>
+
+    <!-- 开源许可证 -->
+    <details class="card">
+        <summary style="font-size:1.2rem;font-weight:600;cursor:pointer;">开源许可证</summary>
+        <pre id="licenseText">MIT License
+
+Copyright (c) 2025 AutoA2A
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+        <button class="btn" id="copyLicenseBtn">复制许可证</button>
+    </details>
+
+    <!-- 更新日志 -->
+    <details class="card">
+        <summary style="font-size:1.2rem;font-weight:600;cursor:pointer;">更新日志</summary>
+        <ul class="changelog">
+            <li>
+                <h3>v1.2.0 (2025-08-15)</h3>
+                <p>新增分子搜索功能，支持通过名称或符号快速定位内置分子库；优化 WebGL 渲染性能，提升大分子模型的帧率。</p>
+            </li>
+            <li>
+                <h3>v1.1.0 (2025-06-02)</h3>
+                <p>添加分子属性分析页面（analyze.html），可计算分子量、氢键数、极性表面积等理化性质；改进文件上传解析，支持更多格式（PDB, SDF, MOL2, XYZ）。</p>
+            </li>
+            <li>
+                <h3>v1.0.0 (2025-03-20)</h3>
+                <p>首次正式发布，提供基础的 3D 分子查看器（viewer.html）、文件上传（upload.html）和渲染设置（settings.html）功能。</p>
+            </li>
+        </ul>
+    </details>
+</div>
+
+<script>
+    // 团队成员简介切换
+    document.querySelectorAll('.toggle-bio').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const bio = btn.previousElementSibling; // .bio 元素
+            if (bio.style.display === 'none' || bio.style.display === '') {
+                bio.style.display = 'block';
+                btn.textContent = '收起简介';
+            } else {
+                bio.style.display = 'none';
+                btn.textContent = '查看简介';
+            }
+        });
+    });
+
+    // 复制许可证
+    document.getElementById('copyLicenseBtn').addEventListener('click', async () => {
+        const licenseText = document.getElementById('licenseText').textContent;
+        try {
+            await navigator.clipboard.writeText(licenseText);
+            alert('许可证已复制到剪贴板');
+        } catch (err) {
+            alert('复制失败: ' + err);
+        }
+    });
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
