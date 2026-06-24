@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>分子可视化工具首页</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;margin:0}
+#content{padding-top:60px;display:flex;gap:20px;padding:20px;max-width:1200px;margin:auto}
+#viewport{flex:3;position:relative;background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);overflow:hidden}
+#controls{flex:1;display:flex;flex-direction:column;gap:16px;align-items:stretch}
+button,input,select{padding:8px;border-radius:4px;border:1px solid #ccc;background:#fff;color:#333;font-size:1rem}
+button.primary{background:#2f6fed;color:#fff;border:none}
+button.primary:hover{background:#2a5cbf}
+input[type=file]{padding:4px}
+#info{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);padding:12px;flex-shrink:0}
+h3{margin:0 0 8px;font-size:1.2rem;}
+/* 新增导航卡片样式 */
+.link-grid{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-bottom:20px;}
+.link-card{
+    flex:1 1 150px;max-width:180px;background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);
+    padding:16px;text-align:center;text-decoration:none;color:#333;transition:transform .2s,box-shadow .2s;
+}
+.link-card:hover{transform:translateY(-4px);box-shadow:0 4px 8px rgba(0,0,0,0.15);}
+.link-card h4{margin:0 0 8px;font-size:1.1rem;color:#2f6fed;}
+.link-card p{margin:0;font-size:.9rem;line-height:1.4;}
+</style>
+<meta name="description" content="展示默认分子结构的交互式 3D 查看器，支持文件上传和分子搜索，页面即可使用。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="分子可视化工具首页"><meta property="og:description" content="展示默认分子结构的交互式 3D 查看器，支持文件上传和分子搜索，页面即可使用。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="分子可视化工具首页"><meta name="twitter:description" content="展示默认分子结构的交互式 3D 查看器，支持文件上传和分子搜索，页面即可使用。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"分子可视化工具首页","description":"展示默认分子结构的交互式 3D 查看器，支持文件上传和分子搜索，页面即可使用。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div id="content">
+    <!-- 导航卡片 -->
+    <div class="link-grid">
+        <a href="viewer.html" class="link-card">
+            <h4>3D 查看器</h4>
+            <p>交互式分子结构查看与操作。</p>
+        </a>
+        <a href="upload.html" class="link-card">
+            <h4>文件上传</h4>
+            <p>上传本地 PDB/SDF/MOL2 文件进行可视化。</p>
+        </a>
+        <a href="settings.html" class="link-card">
+            <h4>设置</h4>
+            <p>调整渲染参数、颜色方案等。</p>
+        </a>
+        <a href="help.html" class="link-card">
+            <h4>帮助</h4>
+            <p>使用说明、常见问题与快捷键。</p>
+        </a>
+        <a href="about.html" class="link-card">
+            <h4>关于</h4>
+            <p>了解项目背景、技术栈与开发团队。</p>
+        </a>
+        <a href="export.html" class="link-card">
+            <h4>导出</h4>
+            <p>导出当前视图为图片或分子文件。</p>
+        </a>
+    </div>
+
+    <div id="viewport"><canvas id="glcanvas" width="800" height="600"></canvas></div>
+    <div id="controls">
+        <div>
+            <h3>分子加载</h3>
+            <input type="file" id="fileInput" accept=".pdb">
+            <button id="loadFileBtn" class="primary">加载文件</button>
+        </div>
+        <div>
+            <h3>内置分子</h3>
+            <select id="molSelect"></select>
+            <button id="loadMolBtn" class="primary">加载选中</button>
+        </div>
+        <div>
+            <h3>分子搜索</h3>
+            <input type="text" id="searchInput" placeholder="输入名称或符号">
+            <button id="searchBtn" class="primary">搜索</button>
+        </div>
+        <div id="info">
+            <h3>信息</h3>
+            <p id="infoText">请加载一个分子以查看详情。</p>
+        </div>
+    </div>
+</div>
+<script>
+/* ==== Shaders ==== */
+const vertexShaderSource = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat3 uNormalMatrix;
+varying vec3 vNormal;
+varying vec3 vPosition;
+void main(){
+    vec4 pos = uModelViewMatrix * vec4(aPosition,1.0);
+    gl_Position = uProjectionMatrix * pos;
+    vNormal = normalize(uNormalMatrix * aNormal);
+    vPosition = pos.xyz;
+}
+`;
+
+const fragmentShaderSource = `
+precision mediump float;
+uniform vec3 uLightDirection;
+uniform vec3 uLightColor;
+uniform vec3 uAmbientColor;
+uniform vec3 uDiffuseColor;
+uniform vec3 uSpecularColor;
+uniform float uShininess;
+varying vec3 vNormal;
+varying vec3 vPosition;
+void main(){
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(uLightDirection);
+    float diff = max(dot(N,L),0.0);
+    vec3 reflectDir = reflect(-L,N);
+    vec3 viewDir = normalize(-vPosition);
+    float spec = pow(max(dot(reflectDir,viewDir),0.0),uShininess);
+    vec3 color = uAmbientColor + uDiffuseColor*diff + uSpecularColor*spec;
+    gl_FragColor = vec4(color,1.0);
+}
+`;
+
+function compileShader(gl, source, type){
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
+        const info = gl.getShaderInfoLog(shader);
+        console.error('Shader compile error:', info);
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+
+function createProgram(gl, vs, fs){
+    const program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if(!gl.getProgramParameter(program, gl.LINK_STATUS)){
+        const info = gl.getProgramInfoLog(program);
+        console.error('Program link error:', info);
+        return null;
+    }
+    return program;
+}
+
+/* ==== Geometry: sphere ==== */
+function createSphere(latBands=16, lonBands=16){
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    for(let lat=0; lat<=latBands; lat++){
+        const theta = lat * Math.PI / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+        for(let lon=0; lon<=lonBands; lon++){
+            const phi = lon * 2 * Math.PI / lonBands;
+            const sinPhi = Math.sin(phi);
+            const cosPhi = Math.cos(phi);
+            const x = cosPhi * sinTheta;
+            const y = cosTheta;
+            const z = sinPhi * sinTheta;
+            positions.push(x, y, z);
+            normals.push(x, y, z);
+        }
+    }
+    for(let lat=0; lat<latBands; lat++){
+        for(let lon=0; lon<lonBands; lon++){
+            const first = lat * (lonBands+1) + lon;
+            const second = first + lonBands+1;
+            indices.push(first, second, first+1);
+            indices.push(second, second+1, first+1);
+        }
+    }
+    return {positions, normals, indices};
+}
+
+/* ==== Main Viewer ==== */
+class MoleculeViewer{
+    constructor(canvas){
+        this.canvas = canvas;
+        this.gl = canvas.getContext('webgl', {antialias:true}) || canvas.getContext('experimental-webgl');
+        if(!this.gl){alert('WebGL not supported'); return;}
+        this.initGL();
+        this.initShaders();
+        this.initBuffers();
+        this.initUniforms();
+        this.initInteraction();
+        this.molecule = {positions:[], normals:[], indices:[], atomColors:[]};
+        this.defaultMolecule();
+        this.camera = {theta:0, phi:Math.PI*0.3, distance:5};
+        this.lastX = null; this.lastY = null;
+        this.render();
+    }
+    initGL(){
+        const gl = this.gl;
+        gl.enable(gl.DEPTH_TEST);
+        gl.clearColor(0.9,0.9,0.95,1);
+    }
+    initShaders(){
+        const gl = this.gl;
+        const vs = compileShader(gl, vertexShaderSource, gl.VERTEX_SHADER);
+        const fs = compileShader(gl, fragmentShaderSource, gl.FRAGMENT_SHADER);
+        this.program = createProgram(gl, vs, fs);
+        gl.useProgram(this.program);
+        this.attribPos = gl.getAttribLocation(this.program, 'aPosition');
+        this.attribNorm = gl.getAttribLocation(this.program, 'aNormal');
+        this.uniMV = gl.getUniformLocation(this.program, 'uModelViewMatrix');
+        this.uniP = gl.getUniformLocation(this.program, 'uProjectionMatrix');
+        this.uniN = gl.getUniformLocation(this.program, 'uNormalMatrix');
+        this.uniLightDir = gl.getUniformLocation(this.program, 'uLightDirection');
+        this.uniLightCol = gl.getUniformLocation(this.program, 'uLightColor');
+        this.uniAmbient = gl.getUniformLocation(this.program, 'uAmbientColor');
+        this.uniDiffuse = gl.getUniformLocation(this.program, 'uDiffuseColor');
+        this.uniSpecular = gl.getUniformLocation(this.program, 'uSpecularColor');
+        this.uniShininess = gl.getUniformLocation(this.program, 'uShininess');
+    }
+    initBuffers(){
+        const gl = this.gl;
+        const sphere = createSphere();
+        this.sphereVertexCount = sphere.positions.length/3;
+        this.posBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
+        this.normBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.normals), gl.STATIC_DRAW);
+        this.indexBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuf);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphere.indices), gl.STATIC_DRAW);
+    }
+    initUniforms(){
+        const gl = this.gl;
+        gl.useProgram(this.program);
+        // light
+        gl.uniform3f(this.uniLightDir, 0.5, 0.5, 1.0);
+        gl.uniform3f(this.uniLightCol, 1.0, 1.0, 1.0);
+        gl.uniform3f(this.uniAmbient, 0.2, 0.2, 0.3);
+        gl.uniform3f(this.uniDiffuse, 0.8, 0.8, 0.9);
+        gl.uniform3f(this.uniSpecular, 0.5, 0.5, 0.5);
+        gl.uniform1f(this.uniShininess, 32.0);
+        // projection
+        const aspect = this.canvas.clientWidth/this.canvas.clientHeight;
+        const proj = mat4();
+        mat4.perspective(proj, Math.PI/4, aspect, 0.1, 100.0);
+        gl.uniformMatrix4fv(this.uniP, false, proj);
+    }
+    initInteraction(){
+        const gl = this.gl;
+        const canvas = this.canvas;
+        let dragging = false;
+        canvas.addEventListener('mousedown', e=>{
+            dragging = true;
+            this.lastX = e.clientX;
+            this.lastY = e.clientY;
+        });
+        canvas.addEventListener('mousemove', e=>{
+            if(!dragging) return;
+            const dx = e.clientX - this.lastX;
+            const dy = e.clientY - this.lastY;
+            this.theta += dx * 0.005;
+            this.phi   -= dy * 0.005;
+            // clamp phi
+            if(this.phi < 0.01) this.phi = 0.01;
+            if(this.phi > Math.PI-0.01) this.phi = Math.PI-0.01;
+            this.lastX = e.clientX;
+            this.lastY = e.clientY;
+        });
+        canvas.addEventListener('mouseup', ()=> dragging = false);
+        canvas.addEventListener('mouseleave', ()=> dragging = false);
+        canvas.addEventListener('wheel', e=>{
+            e.preventDefault();
+            const delta = e.deltaY>0 ? 1.1 : 0.9;
+            this.distance *= delta;
+            if(this.distance < 0.5) this.distance = 0.5;
+            if(this.distance > 20) this.distance = 20;
+        });
+    }
+    defaultMolecule(){
+        // water
+        this.molecule = {
+            positions:[
+                [0.0, 0.0, 0.12],   // O
+                [0.0, 0.76, -0.47], // H
+                [0.0, -0.76, -0.47] // H
+            ],
+            atomColors:[
+                [0.8,0.2,0.2], // O red-ish
+                [1.0,1.0,0.8], // H pale
+                [1.0,1.0,0.8]
+            ]
+        };
+        this.updateInfo('水分子 (H₂O) 已加载');
+    }
+    setMolecule(data){
+        this.molecule = data;
+        this.updateInfo(`已加载 ${this.molecule.positions.length} 个原子`);
+    }
+    updateInfo(txt){
+        document.getElementById('infoText').textContent = txt;
+    }
+    // simple PDB parser (ATOM/HETATM only)
+    parsePDB(text){
+        const lines = text.split('\n');
+        const positions = [];
+        const colors = [];
+        const elemColor = {
+            'C':[0.6,0.6,0.6],
+            'N':[0.2,0.2,0.8],
+            'O':[0.8,0.2,0.2],
+            'S':[0.8,0.6,0.2],
+            'P':[0.4,0.2,0.8],
+            'H':[1.0,1.0,0.8],
+            'default':[0.5,0.5,0.5]
+        };
+        for(const line of lines){
+            if(line.startsWith('ATOM') || line.startsWith('HETATM')){
+                try{
+                    const x = parseFloat(line.substring(30,38));
+                    const y = parseFloat(line.substring(38,46));
+                    const z = parseFloat(line.substring(46,54));
+                    const elem = line.substring(76,78).trim() || line.substring(12,14).trim();
+                    const color = elemColor[elem] || elemColor['default'];
+                    positions.push([x,y,z]);
+                    colors.push(color);
+                }catch(e){}
+            }
+        }
+        if(positions.length===0){
+            alert('未在文件中找到有效的 ATOM 记录');
+            return null;
+        }
+        return {positions, atomColors:colors};
+    }
+    loadFromFile(file){
+        const reader = new FileReader();
+        reader.onload = e=>{
+            const data = this.parsePDB(e.target.result);
+            if(data){
+                this.setMolecule(data);
+            }
+        };
+        reader.onerror = ()=>alert('读取文件失败');
+        reader.readAsText(file);
+    }
+    // built-in molecules
+    builtIns:{
+        '水分子 (H₂O)':{
+            positions:[[0,0,0.12],[0,0.76,-0.47],[0,-0.76,-0.47]],
+            atomColors:[[0.8,0.2,0.2],[1,1,0.8],[1,1,0.8]]
+        },
+        '甲烷 (CH₄)':{
+            positions:[[0,0,0],[0.63,0.63,0.63],[-0.63,-0.63,0.63],[0.63,-0.63,-0.63],[-0.63,0.63,-0.63]],
+            atomColors:[[0.8,0.2,0.2],[0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6]]
+        },
+        '苯 (C₆H₆)':{
+            positions:[
+                [1.23,0,0],[0.615,1.065,0],[-0.615,1.065,0],[-1.23,0,0],[-0.615,-1.065,0],[0.615,-1.065,0],
+                [2.18,0,0],[1.09,1.885,0],[-1.09,1.885,0],[-2.18,0,0],[-1.09,-1.885,0],[1.09,-1.885,0]
+            ],
+            atomColors:[
+                [0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6],[0.6,0.6,0.6],
+                [1,1,0.8],[1,1,0.8],[1,1,0.8],[1,1,0.8],[1,1,0.8],[1,1,0.8]
+            ]
+        }
+    },
+    loadBuiltIn(name){
+        const mol = this.builtIns[name];
+        if(mol){
+            this.setMolecule(mol);
+        }
+    }
+    // rendering
+    render(){
+        const gl = this.gl;
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        // compute view matrix
+        const view = mat4();
+        const eyeX = this.distance * Math.sin(this.phi) * Math.sin(this.theta);
+        const eyeY = this.distance * Math.cos(this.phi);
+        const eyeZ = this.distance * Math.sin(this.phi) * Math.cos(this.theta);
+        const center = [0,0,0];
+        const up = [0,1,0];
+        mat4.lookAt(view, [eyeX,eyeY,eyeZ], center, up);
+        // draw each atom as sphere
+        const {positions, atomColors} = this.molecule;
+        if(positions.length===0){
+            requestAnimationFrame(()=>this.render());
+            return;
+        }
+        gl.useProgram(this.program);
+        // bind sphere buffers
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+        gl.enableVertexAttribArray(this.attribPos);
+        gl.vertexAttribPointer(this.attribPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normBuf);
+        gl.enableVertexAttribArray(this.attribNorm);
+        gl.vertexAttribPointer(this.attribNorm, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuf);
+        // per atom
+        const model = mat4();
+        const modelView = mat4();
+        const normalMat = mat3();
+        const scale = 0.3; // sphere radius scaling
+        for(let i=0;i<positions.length;i++){
+            const pos = positions[i];
+            const col = atomColors[i];
+            // material color
+            gl.uniform3f(this.uniDiffuse, col[0], col[1], col[2]);
+            // model matrix: translate + scale
+            mat4.identity(model);
+            mat4.translate(model, model, pos);
+            mat4.scale(model, model, [scale,scale,scale]);
+            // modelView = view * model
+            mat4.multiply(modelView, view, model);
+            // normal matrix: inverse transpose of modelView upper 3x3
+            mat4.invert(normalMat, modelView);
+            mat4.transpose(normalMat, normalMat);
+            // upload
+            gl.uniformMatrix4fv(this.uniMV, false, modelView);
+            gl.uniformMatrix3fv(this.uniN, false, normalMat);
+            // draw
+            gl.drawElements(gl.TRIANGLES, this.sphereVertexCount*3, gl.UNSIGNED_SHORT, 0);
+        }
+        requestAnimationFrame(()=>this.render());
+    }
+}
+
+/* ==== tiny math helpers (mat4, mat3) ==== */
+function mat4(){ return new Float32Array(16); }
+function mat3(){ return new Float32Array(9); }
+function mat4.identity(out){ out.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]); return out; }
+function mat4.multiply(out, a, b){
+    const a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+    const a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+    const a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+    const a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+    const b00=b[0], b01=b[1], b02=b[2], b03=b[3];
+    const b10=b[4], b11=b[5], b12=b[6], b13=b[7];
+    const b20=b[8], b21=b[9], b22=b[10], b23=b[11];
+    const b30=b[12], b31=b[13], b32=b[14], b33=b[15];
+    out[0]=a00*b00+a01*b10+a02*b20+a03*b30;
+    out[1]=a00*b01+a01*b11+a02*b21+a03*b31;
+    out[2]=a00*b02+a01*b12+a02*b22+a03*b32;
+    out[3]=a00*b03+a01*b13+a02*b23+a03*b33;
+    out[4]=a10*b00+a11*b10+a12*b20+a13*b30;
+    out[5]=a10*b01+a11*b11+a12*b21+a13*b31;
+    out[6]=a10*b02+a11*b12+a12*b22+a13*b32;
+    out[7]=a10*b03+a11*b13+a12*b23+a13*b33;
+    out[8]=a20*b00+a21*b10+a22*b20+a23*b30;
+    out[9]=a20*b01+a21*b11+a22*b21+a23*b31;
+    out[10]=a20*b02+a21*b12+a22*b22+a23*b32;
+    out[11]=a20*b03+a21*b13+a22*b23+a23*b33;
+    out[12]=a30*b00+a31*b10+a32*b20+a33*b30;
+    out[13]=a30*b01+a31*b11+a32*b21+a33*b31;
+    out[14]=a30*b02+a31*b12+a32*b22+a33*b32;
+    out[15]=a30*b03+a31*b13+a32*b23+a33*b33;
+    return out;
+}
+function mat4.translate(out, a, v){
+    const x=v[0], y=v[1], z=v[2];
+    const a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+    const a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+    const a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+    const a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+    out[0]=a00; out[1]=a01; out[2]=a02; out[3]=a03;
+    out[4]=a10; out[5]=a11; out[6]=a12; out[7]=a13;
+    out[8]=a20; out[9]=a21; out[10]=a22; out[11]=a23;
+    out[12]=a00*x+a10*y+a20*z+a30;
+    out[13]=a01*x+a11*y+a21*z+a31;
+    out[14]=a02*x+a12*y+a22*z+a32;
+    out[15]=a03*x+a13*y+a23*z+a33;
+    return out;
+}
+function mat4.scale(out, a, v){
+    const x=v[0], y=v[1], z=v[2];
+    out[0]=a[0]*x; out[1]=a[1]*x; out[2]=a[2]*x; out[3]=a[3]*x;
+    out[4]=a[4]*y; out[5]=a[5]*y; out[6]=a[6]*y; out[7]=a[7]*y;
+    out[8]=a[8]*z; out[9]=a[9]*z; out[10]=a[10]*z; out[11]=a[11]*z;
+    out[12]=a[12]; out[13]=a[13]; out[14]=a[14]; out[15]=a[15];
+    return out;
+}
+function mat4.perspective(out, fovy, aspect, near, far){
+    const f=1.0/Math.tan(fovy/2);
+    const nf=1/(near-far);
+    out[0]=f/aspect;
+    out[1]=0;
+    out[2]=0;
+    out[3]=0;
+    out[4]=0;
+    out[5]=f;
+    out[6]=0;
+    out[7]=0;
+    out[8]=0;
+    out[9]=0;
+    out[10]=(far+near)*nf;
+    out[11]=-1;
+    out[12]=0;
+    out[13]=0;
+    out[14]=(2*far*near)*nf;
+    out[15]=0;
+    return out;
+}
+function mat4.lookAt(out, eye, center, up){
+    const x0=eye[0], y0=eye[1], z0=eye[2];
+    const x1=center[0], y1=center[1], z1=center[2];
+    const x2=up[0], y2=up[1], z2=up[2];
+    let dx=x0-x1, dy=y0-y1, dz=z0-z1;
+    let len=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if(len===0){dx=0; dy=0; dz=1;}
+    else{len=1/len; dx*=len; dy*=len; dz*=len;}
+    let x=dy*z2-dz*y2;
+    let y=dz*x2-dx*z2;
+    let z=dx*y2-dy*x2;
+    len=Math.sqrt(x*x+y*y+z*z);
+    if(len===0){x=0; y=0; z=0;}
+    else{len=1/len; x*=len; y*=len; z*=len;}
+    dx=x*z1-y*y1;
+    dy=y*z1-z*x1;
+    dz=z*x1-x*y1;
+    out[0]=x; out[1]=y; out[2]=z; out[3]=0;
+    out[4]=dx; out[5]=dy; out[6]=dz; out[7]=0;
+    out[8]=dx*z1-dy*y1; out[9]=dy*z1-dz*x1; out[10]=dz*x1-dx*y1; out[11]=0;
+    out[12]=x0; out[13]=y0; out[14]=z0; out[15]=1;
+    return out;
+}
+function mat4.invert(out, a){
+    const a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+    const a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+    const a20=a[8], a21=a[9], a22=a[10], a23=a[11];
+    const a30=a[12], a31=a[13], a32=a[14], a33=a[15];
+    const b00=a00*a11-a01*a10;
+    const b01=a00*a12-a02*a10;
+    const b02=a00*a13-a03*a10;
+    const b03=a01*a12-a02*a11;
+    const b04=a01*a13-a03*a11;
+    const b05=a02*a13-a03*a12;
+    const b06=a20*a31-a21*a30;
+    const b07=a20*a32-a22*a30;
+    const b08=a20*a33-a23*a30;
+    const b09=a21*a32-a22*a31;
+    const b10=a21*a33-a23*a31;
+    const b11=a22*a33-a23*a32;
+    const det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+    if(!det){return null;}
+    const invDet=1/det;
+    out[0]=(a11*b11-a12*b10+a13*b09)*invDet;
+    out[1]=(a02*b10-a01*b11-a03*b09)*invDet;
+    out[2]=(a31*b05-a32*b04+a33*b03)*invDet;
+    out[3]=(a22*b04-a21*b05-a23*b03)*invDet;
+    out[4]=(a12*b08-a10*b11-a13*b07)*invDet;
+    out[5]=(a00*b11-a02*b08+a03*b07)*invDet;
+    out[6]=(a32*b02-a30*b05-a33*b01)*invDet;
+    out[7]=(a20*b05-a22*b02+a23*b01)*invDet;
+    out[8]=(a10*b10-a11*b08+a13*b06)*invDet;
+    out[9]=(a01*b08-a00*b10-a03*b06)*invDet;
+    out[10]=(a30*b04-a32*b02+a33*b01)*invDet;
+    out[11]=(a22*b02-a20*b04-a21*b06)*invDet;
+    out[12]=(a11*b07-a10*b08-a13*b05)*invDet;
+    out[13]=(a01*b08-a00*b07+a02*b05)*invDet;
+    out[14]=(a32*b06-a30*b07-a33*b05)*invDet;
+    out[15]=(a20*b07-a21*b05-a22*b06)*invDet;
+    return out;
+}
+function mat4.transpose(out, a){
+    out[0]=a[0]; out[1]=a[4]; out[2]=a[8]; out[3]=a[12];
+    out[4]=a[1]; out[5]=a[5]; out[6]=a[9]; out[7]=a[13];
+    out[8]=a[2]; out[9]=a[6]; out[10]=a[10]; out[11]=a[14];
+    out[12]=a[3]; out[13]=a[7]; out[14]=a[11]; out[15]=a[15];
+    return out;
+}
+function mat3(){ return new Float32Array(9); }
+function mat3.identity(out){ out.set([1,0,0,0,1,0,0,0,1]); return out; }
+function mat3.transpose(out, a){
+    out[0]=a[0]; out[1]=a[3]; out[2]=a[6];
+    out[3]=a[1]; out[4]=a[4]; out[5]=a[7];
+    out[6]=a[2]; out[7]=a[5]; out[8]=a[8];
+    return out;
+}
+function mat3.invert(out, a){
+    const a00=a[0], a01=a[1], a02=a[2];
+    const a10=a[3], a11=a[4], a12=a[5];
+    const a20=a[6], a21=a[7], a22=a[8];
+    const b01=a22*a11-a12*a21;
+    const b11=-a22*a10+a02*a20;
+    const b21=a12*a10-a02*a11;
+    const det=a00*b01+a01*b11+a02*b21;
+    if(!det){return null;}
+    const detInv=1/det;
+    out[0]=b01*detInv;
+    out[3]=(-a22*a01+a02*a21)*detInv;
+    out[6]=(a12*a01-a02*a11)*detInv;
+    out[1]=(a12*a02-a02*a12)*detInv;
+    out[4]=(a00*a22-a02*a20)*detInv;
+    out[7]=(-a10*a02+a00*a12)*detInv;
+    out[2]=(a11*a02-a01*a12)*detInv;
+    out[5]=(-a00*a12+a01*a10)*detInv;
+    out[8]=(a00*a11-a01*a10)*detInv;
+    return out;
+}
+
+/* ==== UI wiring ==== */
+const viewer = new MoleculeViewer(document.getElementById('glcanvas'));
+const molSelect = document.getElementById('molSelect');
+for(const name in viewer.builtIns){
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    molSelect.appendChild(opt);
+}
+document.getElementById('loadFileBtn').onclick = ()=>{
+    const file = document.getElementById('fileInput').files[0];
+    if(file) viewer.loadFromFile(file);
+};
+document.getElementById('loadMolBtn').onclick = ()=>{
+    const name = molSelect.value;
+    viewer.loadBuiltIn(name);
+};
+document.getElementById('searchBtn').onclick = ()=>{
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    if(!query){ alert('请输入搜索关键词'); return; }
+    const matches = [];
+    for(const name in viewer.builtIns){
+        if(name.toLowerCase().includes(query)){
+            matches.push(name);
+        }
+    }
+    if(matches.length===0){
+        alert('未找到匹配的内置分子');
+    }else{
+        // load first match
+        viewer.loadBuiltIn(matches[0]);
+        molSelect.value = matches[0];
+        alert('已加载: '+matches[0]);
+    }
+};
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
