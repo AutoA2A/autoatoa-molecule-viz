@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D 分子查看器</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f9f9f9;color:#333;margin:0}
+#viewer-content{padding-top:60px;display:flex;gap:20px;padding:20px;max-width:1200px;margin:auto}
+#viewport,#controls,#info{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);padding:16px}
+#viewport{flex:3;position:relative;overflow:hidden}
+#controls{flex:1;display:flex;flex-direction:column;gap:16px;align-items:stretch}
+#info{flex-shrink:0}
+h3{margin:0 0 8px;font-size:1.2rem;}
+button,input,select{padding:8px;border-radius:4px;border:1px solid #ccc;background:#fff;color:#333;font-size:1rem}
+button.primary{background:#2f6fed;color:#fff;border:none}
+button.primary:hover{background:#2a5cbf}
+#tooltip{position:absolute;pointer-events:none;background:rgba(0,0,0,0.7);color:#fff;padding:4px 8px;border-radius:4px;font-size:0.9rem;white-space:nowrap;opacity:0;transition:opacity .2s}
+#molCanvas{width:100%;height:100%;display:block}
+</style>
+<meta name="description" content="使用 WebGL 渲染分子，提供旋转、缩放、平移、原子信息提示。"><meta name="keywords" content="WebGL,3D,分子,可视化,交互,化学,PDB,模型"><meta name="robots" content="index,follow,max-image-preview:large"><meta property="og:type" content="website"><meta property="og:title" content="3D 分子查看器"><meta property="og:description" content="使用 WebGL 渲染分子，提供旋转、缩放、平移、原子信息提示。"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="3D 分子查看器"><meta name="twitter:description" content="使用 WebGL 渲染分子，提供旋转、缩放、平移、原子信息提示。"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"3D 分子查看器","description":"使用 WebGL 渲染分子，提供旋转、缩放、平移、原子信息提示。","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script><style data-a2a="basecss">*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0}img,canvas,svg,video,table{max-width:100%;height:auto}pre,code{white-space:pre-wrap;word-break:break-word}[data-a2a="header"]{width:100%}@media(max-width:640px){body{font-size:15px}}</style></head>
+<body>
+<div id="viewer-content">
+<div id="viewport"><canvas id="molCanvas"></canvas></div>
+<div id="controls">
+<div>
+<h3>导航</h3>
+<button id="btnHome" class="primary">返回首页</button>
+<button id="btnAnalyze" class="primary">性质分析</button>
+<button id="btnExport" class="primary">导出与分享</button>
+</div>
+<div id="info">
+<h3>信息</h3>
+<p id="infoText">请鼠标悬停在原子上查看详情。</p>
+</div>
+</div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+// ==== 工具函数 ====
+function hexToRgb(hex){
+  const shorthand = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  hex = hex.replace(shorthand,(m,r,g,b)=>r+r+g+g+b+b);
+  const res = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return res ? [
+    parseInt(res[1],16),
+    parseInt(res[2],16),
+    parseInt(res[3],16)
+  ] : [0,0,0];
+}
+
+// ==== 分子数据 ====
+const cpk = {
+  H:{color:'#FFFFFF',radius:0.31},
+  C:{color:'#909090',radius:0.67},
+  N:{color:'#3050F8',radius:0.56},
+  O:{color:'#FF0D0D',radius:0.60},
+  S:{color:'#FFFF30',radius:0.88},
+  P:{color:'#FF8000',radius:0.98},
+  Cl:{color:'#1FF01F',radius:0.99},
+};
+const defaultAtom = {color:'#FFFFFF',radius:0.5};
+
+const moleculeData = {
+  ch4:{name:'甲烷 CH4',
+    elements:['C','H','H','H','H'],
+    positions:new Float32Array([
+      0.0,0.0,0.0,
+      1.0,0.0,0.0,
+     -1.0,0.0,0.0,
+      0.0,1.0,0.0,
+      0.0,-1.0,0.0
+    ]),
+    bonds:new Uint16Array([0,1,0,2,0,3,0,4])
+  },
+  h2o:{name:'水 H2O',
+    elements:['O','H','H'],
+    positions:new Float32Array([
+      0.0,0.0,0.0,
+      0.0,0.9572,0.0,
+      0.0,-0.239,0.0
+    ]),
+    bonds:new Uint16Array([0,1,0,2])
+  },
+  co2:{name:'二氧化碳 CO2',
+    elements:['C','O','O'],
+    positions:new Float32Array([
+      0.0,0.0,0.0,
+      1.16,0.0,0.0,
+     -1.16,0.0,0.0
+    ]),
+    bonds:new Uint16Array([0,1,0,2])
+  },
+  nh3:{name:'氨 NH3',
+    elements:['N','H','H','H'],
+    positions:new Float32Array([
+      0.0,0.0,0.0,
+      0.94,0.0,0.0,
+     -0.47,0.81,0.0,
+     -0.47,-0.81,0.0
+    ]),
+    bonds:new Uint16Array([0,1,0,2,0,3])
+  }
+};
+
+// ==== 当前状态 ====
+let currentMol = null;
+let rotX = 0, rotY = 0, distance = -15;
+let isDragging = false, lastX = 0, lastY = 0;
+
+// ==== 初始化分子 ====
+function initMolecule(key){
+  const data = moleculeData[key];
+  if(!data) return;
+  currentMol = data;
+  // 颜色和大小
+  const colors = new Float32Array();
+  const sizes = new Float32Array();
+  data.elements.forEach((el,i)=>{
+    const cp = cpk[el] || defaultAtom;
+    const rgb = hexToRgb(cp.color);
+    colors.push(rgb[0]/255, rgb[1]/255, rgb[2]/255);
+    sizes.push(cp.radius * 2.0); // point size scaling
+  });
+  // 点缓冲
+  recreatePointBuffers(data.positions, colors, sizes);
+  // 线缓冲
+  const linePos = new Float32Array();
+  data.bonds.forEach((idx,i)=>{
+    const pos = [data.positions[idx*3], data.positions[idx*3+1], data.positions[idx*3+2]];
+    linePos.push(...pos);
+  });
+  recreateLineBuffers(linePos);
+  document.getElementById('infoText').textContent = `当前分子：${data.name}`;
+}
+
+// ==== 点缓冲 ====
+let pointPosBuf, pointColBuf, pointSizeBuf, pointProg;
+function recreatePointBuffers(positions, colors, sizes){
+  // 位置
+  pointPosBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointPosBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  // 颜色
+  pointColBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointColBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+  // 大小
+  pointSizeBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pointSizeBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, sizes, gl.STATIC_DRAW);
+}
+
+// ==== 线缓冲 ====
+let linePosBuf, lineProg;
+function recreateLineBuffers(linePos){
+  linePosBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, linePosBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, linePos, gl.STATIC_DRAW);
+}
+
+// ==== 着色器 ====
+const pointVS = `
+attribute vec3 aPosition;
+attribute vec3 aColor;
+attribute float aSize;
+uniform mat4 uMVP;
+varying vec3 vColor;
+void main(){
+  vColor = aColor;
+  gl_PointSize = aSize;
+  gl_Position = uMVP * vec4(aPosition,1.0);
+}`;
+const pointFS = `
+precision mediump float;
+varying vec3 vColor;
+void main(){
+  gl_FragColor = vec4(vColor,1.0);
+}`;
+const lineVS = `
+attribute vec3 aPosition;
+uniform mat4 uMVP;
+void main(){
+  gl_Position = uMVP * vec4(aPosition,1.0);
+}`;
+const lineFS = `
+precision mediump float;
+uniform vec3 uLineColor;
+void main(){
+  gl_FragColor = vec4(uLineColor,1.0);
+}`;
+function createShader(src,type){
+  const sh = gl.createShader(type);
+  gl.shaderShadersrc?gl.shaderSource(sh,src):gl.shaderSource(sh,src);
+  gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){
+    alert('Shader compile error: '+gl.getShaderInfoLog(sh));
+    return null;
+  }
+  return sh;
+}
+function createProgram(vs,fs){
+  const prog = gl.createProgram();
+  gl.attachShader(prog,vs);
+  gl.attachShader(prog,fs);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){
+    alert('Program link error: '+gl.getProgramInfoLog(prog));
+    return null;
+  }
+  return prog;
+}
+const pointVert = createShader(pointVS,gl.VERTEX_SHADER);
+const pointFrag = createShader(pointFS,gl.FRAGMENT_SHADER);
+pointProg = createProgram(pointVert,pointFrag);
+const lineVert = createShader(lineVS,gl.VERTEX_SHADER);
+const lineFrag = createShader(lineFS,gl.FRAGMENT_SHADER);
+lineProg = createProgram(lineVert,lineFrag);
+
+// ==== WebGL 初始化 ====
+const canvas = document.getElementById('molCanvas');
+const gl = canvas.getContext('webgl',{antialias:true})||canvas.getContext('experimental-webgl');
+if(!gl){alert('无法获取 WebGL 上下文');}
+function resizeCanvas(){
+  const dpr = window.devicePixelRatio||1;
+  canvas.width = canvas.clientWidth*dpr;
+  canvas.height = canvas.clientHeight*dpr;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener('resize',resizeCanvas);
+resizeCanvas();
+
+// ==== 矩阵工具 ====
+function mat4Identity(){return new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);}
+function mat4Translate(m,v){
+  const out = new Float32Array(m);
+  out[12]=m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12];
+  out[13]=m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13];
+  out[14]=m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14];
+  out[15]=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15];
+  return out;
+}
+function mat4RotateX(m,rad){
+  const s=Math.sin(rad),c=Math.cos(rad);
+  const out=new Float32Array(m);
+  out[4]=m[4]*c+m[8]*s; out[5]=m[5]*c+m[9]*s; out[6]=m[6]*c+m[10]*s; out[7]=m[7]*c+m[11]*s;
+  out[8]=-m[4]*s+m[8]*c; out[9]=-m[5]*s+m[9]*c; out[10]=-m[6]*s+m[10]*c; out[11]=-m[7]*s+m[11]*c;
+  return out;
+}
+function mat4RotateY(m,rad){
+  const s=Math.sin(rad),c=Math.cos(rad);
+  const out=new Float32Array(m);
+  out[0]=m[0]*c-m[8]*s; out[1]=m[1]*c-m[9]*s; out[2]=m[2]*c-m[10]*s; out[3]=m[3]*c-m[11]*s;
+  out[8]=m[0]*s+m[8]*c; out[9]=m[1]*s+m[9]*c; out[10]=m[2]*s+m[10]*c; out[11]=m[3]*s+m[11]*c;
+  return out;
+}
+function mat4Scale(m,v){
+  const out=new Float32Array(m);
+  out[0]*=v[0];out[1]*=v[0];out[2]*=v[0];out[3]*=v[0];
+  out[4]*=v[1];out[5]*=v[1];out[6]*=v[1];out[7]*=v[1];
+  out[8]*=v[2];out[9]*=v[2];out[10]*=v[2];out[11]*=v[2];
+  return out;
+}
+function mat4Multiply(a,b){
+  const out=new Float32Array(16);
+  for(let i=0;i<4;i++){
+    for(let j=0;j<4;j++){
+      let sum=0;
+      for(let k=0;k<4;k++) sum+=a[i*4+k]*b[k*4+j];
+      out[i*4+j]=sum;
+    }
+  }
+  return out;
+}
+
+// ==== 渲染循环 ====
+function render(){
+  gl.clearColor(1,1,1,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  const aspect = canvas.width/canvas.height;
+  const proj = new Float32Array([
+    1/(aspect*Math.tan(Math.PI/6)),0,0,0,
+    0,1/Math.tan(Math.PI/6),0,0,
+    0,0,-(far+near)/(far-near),-2*far*near/(far-near),
+    0,0,-1,0
+  ]);
+  // 简化透视矩阵（近远平面）
+  const near=0.1, far=100;
+  const f = 1.0/Math.tan(Math.PI/6);
+  const projMat = new Float32Array([
+    f/aspect,0,0,0,
+    0,f,0,0,
+    0,0,(far+near)/(near-far),2*far*near/(near-far),
+    0,0,-1,0
+  ]);
+  // 视图矩阵（平移+旋转）
+  let view = mat4Identity();
+  view = mat4Translate(view,[0,0,distance]);
+  view = mat4RotateY(view,rotY);
+  view = mat4RotateX(view,rotX);
+  const model = mat4Identity();
+  const mvp = mat4Multiply(projMat,mat4Multiply(view,model));
+  // 点
+  gl.useProgram(pointProg);
+  const uMVP = gl.getUniformLocation(pointProg,'uMVP');
+  gl.uniformMatrix4fv(uMVP,false,mvp);
+  // 位置
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointPosBuf);
+  const aPos = gl.getAttribLocation(pointProg,'aPosition');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
+  // 颜色
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointColBuf);
+  const aCol = gl.getAttribLocation(pointProg,'aColor');
+  gl.enableVertexAttribArray(aCol);
+  gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,0,0);
+  // 大小
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointSizeBuf);
+  const aSize = gl.getAttribLocation(pointProg,'aSize');
+  gl.enableVertexAttribArray(aSize);
+  gl.vertexAttribPointer(aSize,1,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.POINTS,0,currentMol?currentMol.elements.length:0);
+  // 线
+  gl.useProgram(lineProg);
+  const uLineMVP = gl.getUniformLocation(lineProg,'uMVP');
+  gl.uniformMatrix4fv(ulineMVP,ulineColor) = [gl.getUniformLocation(lineProg,'uMVP'),gl.getUniformLocation(lineProg,'uLineColor')];
+  gl.uniformMatrix4fv(ulineMVP,false,mvp);
+  gl.uniform3f(ulineColor,0,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,linePosBuf);
+  const aLinePos = gl.getAttribLocation(lineProg,'aPosition');
+  gl.enableVertexAttribArray(aLinePos);
+  gl.vertexAttribPointer(aLinePos,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.LINES,0,currentMol?currentMol.bonds.length:0);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ==== 鼠标交互（旋转、缩放、平移） ====
+canvas.addEventListener('mousedown',e=>{
+  isDragging=true;
+  lastX=e.clientX; lastY=e.clientY;
+});
+canvas.addEventListener('mousemove',e=>{
+  if(!isDragging) return;
+  const dx = e.clientX-lastX;
+  const dy = e.clientY-lastY;
+  if(e.buttons===1){ // 左键旋转
+    rotY += dx*0.01;
+    rotX += dy*0.01;
+  }else if(e.buttons===2){ // 右键平移
+    distance += dy*0.05;
+  }
+  lastX=e.clientX; lastY=e.clientY;
+});
+canvas.addEventListener('mouseup',()=>{isDragging=false;});
+canvas.addEventListener('mouseleave',()=>{isDragging=false;});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  distance += e.deltaY*0.005;
+});
+
+// ==== Tooltip（原子悬停） ====
+function getProjectedPos(pos){
+  // 临时向量乘MVP得到裁剪坐标，再转到窗口坐标
+  const vec = new Float32Array([pos[0],pos[1],pos[2],1.0]);
+  // 简单实现：使用当前的mvp矩阵（在render里已算出）
+  // 这里我们把mvp作为全局变量保存
+  const res = new Float32Array(4);
+  for(let i=0;i<4;i++){
+    res[i]=mvp[i*0]*vec[0]+mvp[i*1]*vec[1]+mvp[i*2]*vec[2]+mvp[i*3]*vec[3];
+  }
+  const w = res[3]||1.0;
+  const ndcX = res[0]/w;
+  const ndcY = res[1]/w;
+  const x = (ndcX*0.5+0.5)*canvas.width;
+  const y = (0.5-ndcY*0.5)*canvas.height; // Y 轴翻转
+  return [x,y];
+}
+let mvp = null; // 保存最新的mvp矩阵
+function renderWithMVP(){
+  gl.clearColor(1,1,1,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  const near=0.1, far=100;
+  const f = 1.0/Math.tan(Math.PI/6);
+  const projMat = new Float32Array([
+    f/aspect,0,0,0,
+    0,f,0,0,
+    0,0,(far+near)/(near-far),2*far*near/(near-far),
+    0,0,-1,0
+  ]);
+  let view = mat4Identity();
+  view = mat4Translate(view,[0,0,distance]);
+  view = mat4RotateY(view,rotY);
+  view = mat4RotateX(view,rotX);
+  const model = mat4Identity();
+  mvp = mat4Multiply(projMat,mat4Multiply(view,model));
+  // 点
+  gl.useProgram(pointProg);
+  const uMVP = gl.getUniformLocation(pointProg,'uMVP');
+  gl.uniformMatrix4fv(uMVP,false,mvp);
+  // 位置
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointPosBuf);
+  const aPos = gl.getAttribLocation(pointProg,'aPosition');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,0,0);
+  // 颜色
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointColBuf);
+  const aCol = gl.getAttribLocation(pointProg,'aColor');
+  gl.enableVertexAttribArray(aCol);
+  gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,0,0);
+  // 大小
+  gl.bindBuffer(gl.ARRAY_BUFFER,pointSizeBuf);
+  const aSize = gl.getAttribLocation(pointProg,'aSize');
+  gl.enableVertexAttribArray(aSize);
+  gl.vertexAttribPointer(aSize,1,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.POINTS,0,currentMol?currentMol.elements.length:0);
+  // 线
+  gl.useProgram(lineProg);
+  const ulineMVP = gl.getUniformLocation(lineProg,'uMVP');
+  const ulineColor = gl.getUniformLocation(lineProg,'uLineColor');
+  gl.uniformMatrix4fv(ulineMVP,false,mvp);
+  gl.uniform3f(ulineColor,0,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,linePosBuf);
+  const aLinePos = gl.getAttribLocation(lineProg,'aPosition');
+  gl.enableVertexAttribArray(aLinePos);
+  gl.vertexAttribPointer(aLinePos,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.LINES,0,currentMol?currentMol.bonds.length:0);
+}
+function renderLoop(){
+  renderWithMVP();
+  requestAnimationFrame(renderLoop);
+}
+renderLoop();
+
+canvas.addEventListener('mousemove',e=>{
+  if(!currentMol) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX-rect.left;
+  const my = e.clientY-rect.top;
+  let hit = null;
+  let minDist = 1e9;
+  const atomRadiusScreen = 10; // 检测半径（像素）
+  currentMol.elements.forEach((el,i)=>{
+    const pos = [
+      currentMol.positions[i*3],
+      currentMol.positions[i*3+1],
+      currentMol.positions[i*3+2]
+    ];
+    const proj = getProjectedPos(pos);
+    const dx = proj[0]-mx;
+    const dy = proj[1]-my;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist<atomRadiusScreen && dist<minDist){
+      minDist=dist;
+      hit = {el,pos};
+    }
+  });
+  const tip = document.getElementById('tooltip');
+  if(hit){
+    tip.textContent = hit.el;
+    tip.style.left = (e.pageX+8)+'px';
+    tip.style.top = (e.pageY+8)+'px';
+    tip.style.opacity = '1';
+  }else{
+    tip.style.opacity = '0';
+  }
+});
+
+// ==== 按钮事件 ====
+document.getElementById('btnHome').onclick=()=>{initMolecule('ch4');};
+document.getElementById('btnAnalyze').onclick=()=>{alert('性质分析功能待实现');};
+document.getElementById('btnExport').onclick=()=>{alert('导出与分享功能待实现');};
+
+// ==== 初始化 ====
+function getMolIdFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  return params.get('id')?.toLowerCase()||'ch4';
+}
+initMolecule(getMolIdFromUrl());
+
+</script>
+<footer data-a2a="footer" style="margin-top:48px;padding:28px 16px;border-top:1px solid rgba(127,127,127,.16);text-align:center;font-family:system-ui,-apple-system,'PingFang SC',sans-serif;line-height:1.9;color:#8a8f99;background:transparent"><a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="display:inline-block;margin-bottom:10px"><img src="https://agent.oagi.com.cn/uploads/202606/29ea3ed5413830b3.png" alt="AutoA2A" style="height:36px;vertical-align:middle;border:0"></a><div style="font-size:13.5px;color:#6b7280;max-width:760px;margin:0 auto 6px">✅️ <b>AutoA2A</b> · 智能体互连 Agent to Agent 平台——让智能体无缝发现、协商、协作与安全交换数据，开启 AI 即服务新时代。</div><div style="font-size:13px">本网站由 <a href="https://www.autoa2a.org" target="_blank" rel="noopener" style="color:#f2603c;text-decoration:none;font-weight:600">www.autoa2a.org</a> 多个 AI 协作生成</div><div style="font-size:12px;color:#aab;margin-top:6px">Copyright © 2025 - 2026 AutoA2A. All Rights Reserved. A2A版权所有</div></footer></body>
+</html>
